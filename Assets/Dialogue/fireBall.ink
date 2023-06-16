@@ -1,0 +1,3 @@
+Abriste el cofre...
+¡Has obtenido el Elemento de Fuego!
+Con el objeto equipado, pulsa Click izquierdo para lanzar.
