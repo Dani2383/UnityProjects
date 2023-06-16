@@ -1,1 +1,0 @@
-Pulsa "Espacio" para Saltar!
