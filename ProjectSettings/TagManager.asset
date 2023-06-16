@@ -1,0 +1,101 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 2
+  tags:
+  - Shooter
+  - Body
+  - Flecha
+  - Decoy
+  - Light
+  - Torch
+  - Hidding Place
+  - Torches
+  - Ladder
+  - Enemy
+  - OneWayPlatform
+  - Stairs
+  - StairsCollider
+  - DialoguePanel
+  - SlotContainer
+  - Inventory
+  - Goal
+  - Boss
+  - Boss Zone
+  - Rock
+  - EnergyBall
+  - ThrowAttackSpawners
+  - Terrain
+  - DebugArea
+  - Doors
+  - BossDoor
+  - PuzzleTorches
+  - FireBall
+  - DeathPit
+  - UI
+  - PuzzleTorch
+  - Slot
+  - Heart
+  - SliderEffects
+  - SliderMusic
+  - SliderSteps
+  - Prueba
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - Background
+  - Terrain
+  - SceneObjects
+  - Objects
+  - Enemies
+  - ThrownObjects
+  - Stairs
+  - Player
+  - PlayerHead
+  - Platforms
+  - Boss
+  - ThrowAttackSpawners
+  - BossAttacks
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: Background
+    uniqueID: 1818433677
+    locked: 0
+  - name: BackgroundDecoration
+    uniqueID: 679856463
+    locked: 0
+  - name: Terrain
+    uniqueID: 3033399705
+    locked: 0
+  - name: SceneObjects
+    uniqueID: 2424137079
+    locked: 0
+  - name: Objects
+    uniqueID: 2613820797
+    locked: 0
+  - name: Entities
+    uniqueID: 2587705237
+    locked: 0
+  - name: FogOfWar
+    uniqueID: 2205308475
+    locked: 0

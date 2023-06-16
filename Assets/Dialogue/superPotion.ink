@@ -1,0 +1,3 @@
+Abriste el cofre...
+¡Has obtenido SuperPoción!
+Con el objeto equipado, pulsa Click izquierdo en el Inventario.
