@@ -211,18 +211,27 @@ namespace Oculus.Avatar2
             VF_BONE_WEIGHTS = 64,
             VF_BONE_INDICES = 128,
         }
-        // This isn't really necessary since '0' is the default. The reason to include it is to make it clear which
-        // stream is being used and where to start making changes to support multiple streams.
-        private const int VF_STREAM_ID = 0;
+
+        // Unity 2022 requires skinned mesh attributes be on specific streams. We create separate NativeArrays and
+        // strides for each stream.
+        // Stream 0: Position, Normal, Tangent
+        // Stream 1: Color, TexCoord0, TextCoord1
+        // Stream 2: BlendWeight, BlendIndices
+        private const int VF_STREAM_COUNT = 3;
+
+        // These aren't really necessary but make it clear which stream is being used and where.
+        private const int VF_STREAM_0 = 0;
+        private const int VF_STREAM_1 = 1;
+        private const int VF_STREAM_2 = 2;
 
         private struct VertexBuffer
         {
             public VertexFormat vertexFormat;
             public int vertexCount;
-            public int vertexStride;
+            public int[] vertexStrides;
             public List<VertexAttributeDescriptor> vertexLayout;
 
-            public NativeArray<byte> vertices;
+            public NativeArray<byte>[] vertexStreams;
         }
 
         // Data shared across threads
@@ -941,9 +950,13 @@ namespace Oculus.Avatar2
                 _meshInfo.MeshBoneWeightsComplete();
 
                 // Upload vertex data to the mesh.
-                mesh.SetVertexBufferData(vertexBuffer.vertices, 0, 0,
-                    vertexBuffer.vertexCount * vertexBuffer.vertexStride, VF_STREAM_ID);
+                for (int i = 0; i < VF_STREAM_COUNT; ++i)
+                {
+                    mesh.SetVertexBufferData(vertexBuffer.vertexStreams[i], 0, 0,
+                        vertexBuffer.vertexCount * vertexBuffer.vertexStrides[i], i);
+                }
                 mesh.UploadMeshData(true);
+
                 // Mark the CPU vertex data as disposable.
                 DisposeVertexBuffer(_meshInfo);
 
@@ -1451,8 +1464,14 @@ namespace Oculus.Avatar2
             // Get the vertex format information from the fetched vertex data.
             // We need to build a dynamic layout based on the actual data present.
             var vertexCount = (int)meshInfo.vertexCount;
-            var vertexFormat = GetVertexFormat(meshInfo, out var vertexStride);
-            var vertexSizeInBytes = vertexStride * vertexCount;
+            var vertexFormat = GetVertexFormat(meshInfo, out var vertexStrides);
+
+            var vertices = new NativeArray<byte>[VF_STREAM_COUNT];
+            for (int i = 0; i < VF_STREAM_COUNT; ++i)
+            {
+                var vertexStreamSizeInBytes = vertexStrides[i] * vertexCount;
+                vertices[i] = new NativeArray<byte>(vertexStreamSizeInBytes, _nativeAllocator, _nativeArrayInit);
+            }
 
             // Create a vertex buffer using the format and stride.
             meshInfo.vertexBuffer = new VertexBuffer
@@ -1460,55 +1479,56 @@ namespace Oculus.Avatar2
                 vertexFormat = vertexFormat,
                 vertexLayout = CreateVertexLayout(vertexFormat),
                 vertexCount = vertexCount,
-                vertexStride = vertexStride,
-                vertices = new NativeArray<byte>(vertexSizeInBytes, _nativeAllocator, _nativeArrayInit),
+                vertexStrides = vertexStrides,
+                vertexStreams = vertices,
             };
         }
 
-        private VertexFormat GetVertexFormat(MeshInfo meshInfo, out int vertexStride)
+        private VertexFormat GetVertexFormat(MeshInfo meshInfo, out int[] vertexStrides)
         {
             // TODO: Support different attribute formats rather than hardcoding them. This will be useful for quantizing
             // vertex data to reduce vertex shader read bandwidth.
             // TODO: Use constants for vector and color sizes.
             VertexFormat vertexFormat = VertexFormat.VF_POSITION;
-            vertexStride = 3 * sizeof(float);   // assume that all vertex formats have a position.
+            vertexStrides = new int[VF_STREAM_COUNT];
+            vertexStrides[VF_STREAM_0] = 3 * sizeof(float);   // assume that all vertex formats have a position.
             if (OvrAvatarManager.Instance.UnitySMRSupported)
             {
                 if (meshInfo.normals.Length > 0)
                 {
                     vertexFormat |= VertexFormat.VF_NORMAL;
-                    vertexStride += 3 * sizeof(float);
+                    vertexStrides[VF_STREAM_0] += 3 * sizeof(float);
                 }
                 if (meshInfo.hasTangents && meshInfo.tangents.Length > 0)
                 {
                     vertexFormat |= VertexFormat.VF_TANGENT;
-                    vertexStride += 4 * sizeof(float);
+                    vertexStrides[VF_STREAM_0] += 4 * sizeof(float);
                 }
             }
 
             if (meshInfo.colors.Length > 0 || meshInfo.subMeshTypes.Length > 0)
             {
                 vertexFormat |= VertexFormat.VF_COLOR;
-                vertexStride += 4;
+                vertexStrides[VF_STREAM_1] += 4;
             }
             if (meshInfo.texCoords.Length > 0)
             {
                 vertexFormat |= VertexFormat.VF_TEXCOORD0;
-                vertexStride += 2 * sizeof(float);
+                vertexStrides[VF_STREAM_1] += 2 * sizeof(float);
             }
             if (meshInfo.colorsORMT.Length > 0)
             {
                 vertexFormat |= VertexFormat.VF_COLOR_ORMT;
-                vertexStride += 4 * sizeof(float);
+                vertexStrides[VF_STREAM_1] += 4 * sizeof(float);
             }
             if (data.jointCount > 0 && OvrAvatarManager.Instance.UnitySMRSupported)
             {
                 vertexFormat |= (VertexFormat.VF_BONE_WEIGHTS | VertexFormat.VF_BONE_INDICES);
-                vertexStride += 4 * sizeof(float);    // weights
-                vertexStride += 4;    // bone indices
+                vertexStrides[VF_STREAM_2] += 4 * sizeof(float);    // weights
+                vertexStrides[VF_STREAM_2] += 4;    // bone indices
             }
 
-            OvrAvatarLog.LogVerbose($"Vertex Format = {vertexFormat}, Stride = {vertexStride}", primitiveLogScope);
+            OvrAvatarLog.LogVerbose($"Vertex Format = {vertexFormat}, Strides = [{vertexStrides[VF_STREAM_0]}, {vertexStrides[VF_STREAM_1]}, {vertexStrides[VF_STREAM_2]}]", primitiveLogScope);
             return vertexFormat;
         }
 
@@ -1522,42 +1542,42 @@ namespace Oculus.Avatar2
             if ((format & VertexFormat.VF_POSITION) == VertexFormat.VF_POSITION)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32,
-                    3, VF_STREAM_ID));
+                    3, VF_STREAM_0));
             }
             if ((format & VertexFormat.VF_NORMAL) == VertexFormat.VF_NORMAL)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3,
-                    VF_STREAM_ID));
+                    VF_STREAM_0));
             }
             if ((format & VertexFormat.VF_TANGENT) == VertexFormat.VF_TANGENT)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.Tangent, VertexAttributeFormat.Float32,
-                    4, VF_STREAM_ID));
+                    4, VF_STREAM_0));
             }
             if ((format & VertexFormat.VF_COLOR) == VertexFormat.VF_COLOR)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4,
-                    VF_STREAM_ID));
+                    VF_STREAM_1));
             }
             if ((format & VertexFormat.VF_TEXCOORD0) == VertexFormat.VF_TEXCOORD0)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32,
-                    2, VF_STREAM_ID));
+                    2, VF_STREAM_1));
             }
             if ((format & VertexFormat.VF_COLOR_ORMT) == VertexFormat.VF_COLOR_ORMT)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.TexCoord1, VertexAttributeFormat.Float32,
-                    4, VF_STREAM_ID));
+                    4, VF_STREAM_1));
             }
             if ((format & VertexFormat.VF_BONE_WEIGHTS) == VertexFormat.VF_BONE_WEIGHTS)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.BlendWeight,
-                    VertexAttributeFormat.Float32, 4, VF_STREAM_ID));
+                    VertexAttributeFormat.Float32, 4, VF_STREAM_2));
             }
             if ((format & VertexFormat.VF_BONE_INDICES) == VertexFormat.VF_BONE_INDICES)
             {
                 vertexLayout.Add(new VertexAttributeDescriptor(VertexAttribute.BlendIndices,
-                    VertexAttributeFormat.UInt8, 4, VF_STREAM_ID));
+                    VertexAttributeFormat.UInt8, 4, VF_STREAM_2));
             }
 
             return vertexLayout;
@@ -1567,11 +1587,11 @@ namespace Oculus.Avatar2
         {
             var vertexBuffer = meshInfo.vertexBuffer;
             var vertexFormat = vertexBuffer.vertexFormat;
-            var vertexStride = vertexBuffer.vertexStride;
 
             unsafe
             {
-                var vertices = vertexBuffer.vertices.GetPtr();
+                var vertices = vertexBuffer.vertexStreams[VF_STREAM_0].GetPtr();
+                var vertexStride = vertexBuffer.vertexStrides[VF_STREAM_0];
                 for (int i = 0; i < vertexBuffer.vertexCount; i++)
                 {
                     byte* outBuffer = &vertices[vertexStride * i];
@@ -1596,7 +1616,14 @@ namespace Oculus.Avatar2
                         *outTangent = meshInfo.tangents[i];
                         offset += 4 * sizeof(float);
                     }
+                }
 
+                vertices = vertexBuffer.vertexStreams[VF_STREAM_1].GetPtr();
+                vertexStride = vertexBuffer.vertexStrides[VF_STREAM_1];
+                for (int i = 0; i < vertexBuffer.vertexCount; i++)
+                {
+                    byte* outBuffer = &vertices[vertexStride * i];
+                    int offset = 0;
                     if ((vertexFormat & VertexFormat.VF_COLOR) == VertexFormat.VF_COLOR)
                     {
                         Color32* outColor = (Color32*)&outBuffer[offset];
@@ -1617,7 +1644,14 @@ namespace Oculus.Avatar2
                         *outColor = meshInfo.colorsORMT[i];
                         offset += 4 * sizeof(float);
                     }
+                }
 
+                vertices = vertexBuffer.vertexStreams[VF_STREAM_2].GetPtr();
+                vertexStride = vertexBuffer.vertexStrides[VF_STREAM_2];
+                for (int i = 0; i < vertexBuffer.vertexCount; i++)
+                {
+                    byte* outBuffer = &vertices[vertexStride * i];
+                    int offset = 0;
                     if ((vertexFormat & VertexFormat.VF_BONE_WEIGHTS) == VertexFormat.VF_BONE_WEIGHTS)
                     {
                         Vector4* outWeights = (Vector4*)&outBuffer[offset];
@@ -1642,7 +1676,10 @@ namespace Oculus.Avatar2
 
         private static void DisposeVertexBuffer(MeshInfo meshInfo)
         {
-            meshInfo.vertexBuffer.vertices.Reset();
+            for (int i = 0; i < VF_STREAM_COUNT; ++i)
+            {
+                meshInfo.vertexBuffer.vertexStreams[i].Reset();
+            }
         }
 
         /////////////////////////////////////////////////

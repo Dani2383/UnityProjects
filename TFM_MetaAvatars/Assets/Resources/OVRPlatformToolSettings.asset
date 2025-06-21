@@ -19,4 +19,4 @@ MonoBehaviour:
   - configList: []
   - configList: []
   targetPlatform: 2
-  runOvrLint: 0
+  runOvrLint: 1
